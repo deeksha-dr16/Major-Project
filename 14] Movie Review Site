@@ -1,0 +1,593 @@
+Project Setup
+1. Initialize the Project
+Create a new directory for the project and initialize it:
+mkdir movie-review-site
+cd movie-review-site
+git init
+npm init -y
+
+2. Set Up the Backend (Node.js + Express + MongoDB)
+Install dependencies:
+npm install express mongoose dotenv bcryptjs jsonwebtoken cors
+npm install --save-dev nodemon
+
+
+Project Structure:
+movie-review-site/
+├── backend/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── config/
+│   ├── server.js
+├── frontend/
+└── .env
+
+
+server.js: Set up Express server and MongoDB connection.
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.log(err));
+
+// Routes
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/movies', require('./routes/movieRoutes'));
+app.use('/api/reviews', require('./routes/reviewRoutes'));
+app.use('/api/comments', require('./routes/commentRoutes'));
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+.env: Configure environment variables.
+MONGO_URI=mongodb://localhost:27017/movie-review-site
+JWT_SECRET=your_jwt_secret
+
+
+3. Create Models (MongoDB Schema)
+User Model (models/User.js):
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+}, { timestamps: true });
+
+UserSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+UserSchema.methods.generateToken = function () {
+  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+};
+
+UserSchema.methods.comparePassword = function (password) {
+  return bcrypt.compare(password, this.password);
+};
+
+module.exports = mongoose.model('User', UserSchema);
+
+
+Movie Model (models/Movie.js):
+const mongoose = require('mongoose');
+
+const MovieSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  genre: { type: String, required: true },
+  releaseDate: { type: Date, required: true },
+  description: { type: String },
+  posterUrl: { type: String },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Movie', MovieSchema);
+
+Review Model (models/Review.js):
+const mongoose = require('mongoose');
+
+const ReviewSchema = new mongoose.Schema({
+  movie: { type: mongoose.Schema.Types.ObjectId, ref: 'Movie', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  rating: { type: Number, required: true },
+  reviewText: { type: String, required: true },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Review', ReviewSchema);
+
+
+Comment Model (models/Comment.js):
+const mongoose = require('mongoose');
+
+const CommentSchema = new mongoose.Schema({
+  review: { type: mongoose.Schema.Types.ObjectId, ref: 'Review', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  commentText: { type: String, required: true },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Comment', CommentSchema);
+
+
+4. Create Routes and Controllers
+User Routes (routes/userRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { register, login } = require('../controllers/userController');
+
+router.post('/register', register);
+router.post('/login', login);
+
+module.exports = router;
+
+
+Movie Routes (routes/movieRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createMovie, getMovies, updateMovie, deleteMovie } = require('../controllers/movieController');
+const { protect, admin } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, admin, createMovie)
+  .get(getMovies);
+
+router.route('/:id')
+  .put(protect, admin, updateMovie)
+  .delete(protect, admin, deleteMovie);
+
+module.exports = router;
+
+
+Review Routes (routes/reviewRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createReview, getReviews, updateReview, deleteReview } = require('../controllers/reviewController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createReview)
+  .get(getReviews);
+
+router.route('/:id')
+  .put(protect, updateReview)
+  .delete(protect, deleteReview);
+
+module.exports = router;
+
+
+Comment Routes (routes/commentRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createComment, getComments, updateComment, deleteComment } = require('../controllers/commentController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createComment)
+  .get(getComments);
+
+router.route('/:id')
+  .put(protect, updateComment)
+  .delete(protect, deleteComment);
+
+module.exports = router;
+
+
+5. Implement Controllers
+User Controller (controllers/userController.js):
+const User = require('../models/User');
+
+const register = async (req, res) => {
+  const { username, email, password } = req.body;
+
+  try {
+    const user = await User.create({ username, email, password });
+    const token = user.generateToken();
+    res.status(201).json({ token, user: { id: user._id, username: user.username, email: user.email } });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+    const token = user.generateToken();
+    res.json({ token, user: { id: user._id, username: user.username, email: user.email } });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { register, login };
+
+
+Movie Controller (controllers/movieController.js):
+const Movie = require('../models/Movie');
+
+const createMovie = async (req, res) => {
+  try {
+    const movie = await Movie.create(req.body);
+    res.status(201).json(movie);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const getMovies = async (req, res) => {
+  try {
+    const movies = await Movie.find();
+    res.json(movies);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateMovie = async (req, res) => {
+  try {
+    const movie = await Movie.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!movie) {
+      return res.status(404).json({ message: 'Movie not found' });
+    }
+    res.json(movie);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteMovie = async (req, res) => {
+  try {
+    const movie = await Movie.findByIdAndDelete(req.params.id);
+    if (!movie) {
+      return res.status(404).json({ message: 'Movie not found' });
+    }
+    res.json({ message: 'Movie deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createMovie, getMovies, updateMovie, deleteMovie };
+
+
+Review Controller (controllers/reviewController.js):
+const Review = require('../models/Review');
+
+const createReview = async (req, res) => {
+  try {
+    const review = await Review.create({ ...req.body, user: req.user.id });
+    res.status(201).json(review);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const getReviews = async (req, res) => {
+  try {
+    const reviews = await Review.find().populate('movie').populate('user');
+    res.json(reviews);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateReview = async (req, res) => {
+  try {
+    const review = await Review.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+    res.json(review);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteReview = async (req, res) => {
+  try {
+    const review = await Review.findByIdAndDelete(req.params.id);
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+    res.json({ message: 'Review deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createReview, getReviews, updateReview, deleteReview };
+
+
+Comment Controller (controllers/commentController.js):
+const Comment = require('../models/Comment');
+
+const createComment = async (req, res) => {
+  try {
+    const comment = await Comment.create({ ...req.body, user: req.user.id });
+    res.status(201).json(comment);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const getComments = async (req, res) => {
+  try {
+    const comments = await Comment.find().populate('review').populate('user');
+    res.json(comments);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateComment = async (req, res) => {
+  try {
+    const comment = await Comment.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!comment) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+    res.json(comment);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteComment = async (req, res) => {
+  try {
+    const comment = await Comment.findByIdAndDelete(req.params.id);
+    if (!comment) {
+      return res.status(404).json({ message: 'Comment not found' });
+    }
+    res.json({ message: 'Comment deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createComment, getComments, updateComment, deleteComment };
+
+
+6. Set Up Middleware
+Auth Middleware (middleware/authMiddleware.js):
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+  if (!token) {
+    return res.status(401).json({ message: 'Not authorized, no token' });
+  }
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id).select('-password');
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Not authorized' });
+  }
+};
+
+const admin = (req, res, next) => {
+  if (req.user && req.user.isAdmin) {
+    next();
+  } else {
+    res.status(403).json({ message: 'Not authorized as an admin' });
+  }
+};
+
+module.exports = { protect, admin };
+
+
+7. Implement Frontend (React)
+Set up React App:
+npx create-react-app frontend
+cd frontend
+npm install axios react-router-dom chart.js react-chartjs-2
+
+
+Project Structure:
+frontend/
+├── public/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── context/
+│   ├── App.js
+│   ├── index.js
+│   ├── index.css
+└── package.json
+
+
+App.js: Set up routing and context.
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import HomePage from './pages/HomePage';
+import MoviePage from './pages/MoviePage';
+import ReviewPage from './pages/ReviewPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+
+const App = () => {
+  return (
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/movies" element={<MoviePage />} />
+          <Route path="/reviews" element={<ReviewPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
+};
+
+export default App;
+
+
+Auth Context (context/AuthContext.js):
+import React, { createContext, useState } from 'react';
+
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  const login = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
+
+
+8. Implement Pages and Components
+HomePage, MoviePage, ReviewPage, LoginPage, RegisterPage: Create pages for managing movies, reviews, and user authentication. Use Axios to interact with the backend API for CRUD operations.
+
+MovieForm (components/MovieForm.js):
+import React, { useState } from 'react';
+import axios from 'axios';
+
+const MovieForm = ({ movie, onSubmit }) => {
+  const [title, setTitle] = useState(movie ? movie.title : '');
+  const [genre, setGenre] = useState(movie ? movie.genre : '');
+  const [releaseDate, setReleaseDate] = useState(movie ? movie.releaseDate : '');
+  const [description, setDescription] = useState(movie ? movie.description : '');
+  const [posterUrl, setPosterUrl] = useState(movie ? movie.posterUrl : '');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const movieData = { title, genre, releaseDate, description, posterUrl };
+    onSubmit(movieData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Title"
+        required
+      />
+      <input
+        type="text"
+        value={genre}
+        onChange={(e) => setGenre(e.target.value)}
+        placeholder="Genre"
+        required
+      />
+      <input
+        type="date"
+        value={releaseDate}
+        onChange={(e) => setReleaseDate(e.target.value)}
+        placeholder="Release Date"
+        required
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description"
+      />
+      <input
+        type="text"
+        value={posterUrl}
+        onChange={(e) => setPosterUrl(e.target.value)}
+        placeholder="Poster URL"
+      />
+      <button type="submit">Save Movie</button>
+    </form>
+  );
+};
+
+export default MovieForm;
+
+HomePage (pages/HomePage.js): Display a list of movies and their reviews.
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+
+const HomePage = () => {
+  const [movies, setMovies] = useState([]);
+
+  useEffect(() => {
+    axios.get('/api/movies')
+      .then(response => setMovies(response.data))
+      .catch(error => console.error('Error fetching movies:', error));
+  }, []);
+
+  return (
+    <div>
+      <h1>Movies</h1>
+      <ul>
+        {movies.map(movie => (
+          <li key={movie._id}>
+            <h2>{movie.title}</h2>
+            <p>{movie.description}</p>
+            <img src={movie.posterUrl} alt={movie.title} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default HomePage;
+MoviePage (pages/MoviePage.js): Manage movie details.
+
+ReviewPage (pages/ReviewPage.js): Manage and display reviews for movies.
+
+LoginPage (pages/LoginPage.js): User login form.
+
+RegisterPage (pages/RegisterPage.js): User registration form.
+
+
+9. Connect Frontend to Backend
+Set up a proxy in frontend/package.json to simplify API calls:
+"proxy": "http://localhost:5000"
+Use Axios in components to make API requests (e.g., add movie, get movies).
+
+
+10. Test and Deploy
+Testing: Run both backend and frontend servers to test the application locally.
+# In the backend directory
+npm run server
+
+# In the frontend directory
+npm start
