@@ -1,0 +1,516 @@
+ Project Structure
+The project will have the following structure:
+mern-event-management/
+├── backend/
+│   ├── config/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── server.js
+│   └── .env
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── App.js
+│   │   └── index.js
+│   └── package.json
+└── README.md
+
+3. Backend Setup
+Step 1: Initialize the Backend
+Create the Backend Directory:
+
+mkdir backend && cd backend
+Initialize a Node.js Project:
+
+
+npm init -y
+Install Necessary Dependencies:
+
+npm install express mongoose dotenv cors
+Create Basic Files and Folders:
+
+Create server.js, config, controllers, models, routes, and middleware folders.
+
+Step 2: Set Up the Server
+server.js:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+// Initialize the app
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch((err) => console.error('MongoDB connection error:', err));
+
+// Routes
+app.use('/api/events', require('./routes/eventRoutes'));
+app.use('/api/users', require('./routes/userRoutes'));
+
+// Start the server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+Step 3: Configure Environment Variables
+Create a .env file in the backend directory:
+
+MONGO_URI=mongodb://localhost:27017/mern-event-management
+JWT_SECRET=your_jwt_secret
+Replace the MongoDB URI with your own if you're using MongoDB Atlas or a different setup.
+
+Step 4: Define Models
+Event Model: Create a models folder and add a file named Event.js:
+
+models/Event.js:
+const mongoose = require('mongoose');
+
+const eventSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+  },
+  description: {
+    type: String,
+    required: true,
+  },
+  date: {
+    type: Date,
+    required: true,
+  },
+  location: {
+    type: String,
+    required: true,
+  },
+  attendees: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  ],
+}, {
+  timestamps: true,
+});
+
+module.exports = mongoose.model('Event', eventSchema);
+User Model: Add a file named User.js:
+
+models/User.js:
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  password: {
+    type: String,
+    required: true,
+  },
+  registeredEvents: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Event',
+    },
+  ],
+}, {
+  timestamps: true,
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+Step 5: Create Controllers
+Create a controllers folder and add files for events and users.
+
+eventController.js:
+const Event = require('../models/Event');
+
+// Create a new event
+const createEvent = async (req, res) => {
+  const { title, description, date, location } = req.body;
+
+  try {
+    const newEvent = new Event({ title, description, date, location });
+    const savedEvent = await newEvent.save();
+    res.status(201).json(savedEvent);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get all events
+const getAllEvents = async (req, res) => {
+  try {
+    const events = await Event.find({});
+    res.status(200).json(events);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get a single event by ID
+const getEventById = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (event) {
+      res.status(200).json(event);
+    } else {
+      res.status(404).json({ message: 'Event not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Update an event
+const updateEvent = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (event) {
+      event.title = req.body.title || event.title;
+      event.description = req.body.description || event.description;
+      event.date = req.body.date || event.date;
+      event.location = req.body.location || event.location;
+
+      const updatedEvent = await event.save();
+      res.json(updatedEvent);
+    } else {
+      res.status(404).json({ message: 'Event not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Delete an event
+const deleteEvent = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (event) {
+      await event.remove();
+      res.json({ message: 'Event removed' });
+    } else {
+      res.status(404).json({ message: 'Event not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Register a user to an event
+const registerToEvent = async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    const user = await User.findById(req.user.id);
+
+    if (event && user) {
+      event.attendees.push(user._id);
+      user.registeredEvents.push(event._id);
+
+      await event.save();
+      await user.save();
+
+      res.json({ event, user });
+    } else {
+      res.status(404).json({ message: 'Event or User not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  createEvent,
+  getAllEvents,
+  getEventById,
+  updateEvent,
+  deleteEvent,
+  registerToEvent,
+};
+
+userController.js:
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+// Register a new user
+const registerUser = async (req, res) => {
+  const { name, email, password } = req.body;
+
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const newUser = new User({ name, email, password: hashedPassword });
+    const savedUser = await newUser.save();
+    res.status(201).json(savedUser);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Login a user
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (user && await bcrypt.compare(password, user.password)) {
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+      res.json({ token });
+    } else {
+      res.status(401).json({ message: 'Invalid credentials' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get user profile
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (user) {
+      res.json(user);
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  getUserProfile,
+};
+
+Step 6: Setup Routes
+Create a routes folder and add eventRoutes.js and userRoutes.js.
+
+eventRoutes.js:
+const express = require('express');
+const { createEvent, getAllEvents, getEventById, updateEvent, deleteEvent, registerToEvent } = require('../controllers/eventController');
+const auth = require('../middleware/auth');
+
+const router = express.Router();
+
+router.route('/').get(getAllEvents).post(auth, createEvent);
+router.route('/:id').get(getEventById).put(auth, updateEvent).delete(auth, deleteEvent);
+router.post('/register/:id', auth, registerToEvent);
+
+module.exports = router;
+
+userRoutes.js:
+const express = require('express');
+const { registerUser, loginUser, getUserProfile } = require('../controllers/userController');
+const auth = require('../middleware/auth');
+
+const router = express.Router();
+
+router.post('/register', registerUser);
+router.post('/login', loginUser);
+router.get('/profile', auth, getUserProfile);
+
+module.exports = router;
+
+auth.js (middleware for authentication):
+const jwt = require('jsonwebtoken');
+
+const auth = (req, res, next) => {
+  const token = req.header('Authorization');
+
+  if (!token) {
+    return res.status(401).json({ message: 'No token, authorization denied' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ message: 'Token is not valid' });
+  }
+};
+
+module.exports = auth;
+
+4. Frontend Setup
+Step 1: Initialize React Application
+Create the Frontend Directory:
+mkdir frontend && cd frontend
+
+Initialize a new React Application:
+npx create-react-app .
+
+Install Necessary Dependencies:
+npm install axios react-router-dom
+
+Step 2: Create Components and Pages
+HomePage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Link } from 'react-router-dom';
+
+const HomePage = () => {
+  const [events, setEvents] = useState([]);
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      const { data } = await axios.get('/api/events');
+      setEvents(data);
+    };
+
+    fetchEvents();
+  }, []);
+
+  return (
+    <div>
+      <h1>Upcoming Events</h1>
+      {events.map(event => (
+        <div key={event._id}>
+          <Link to={`/events/${event._id}`}>
+            <h2>{event.title}</h2>
+          </Link>
+          <p>{event.description}</p>
+          <p>Date: {new Date(event.date).toLocaleDateString()}</p>
+          <p>Location: {event.location}</p>
+          <hr />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default HomePage;
+
+EventDetailsPage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useParams } from 'react-router-dom';
+
+const EventDetailsPage = () => {
+  const { id } = useParams();
+  const [event, setEvent] = useState({});
+  const [isRegistered, setIsRegistered] = useState(false);
+
+  useEffect(() => {
+    const fetchEvent = async () => {
+      const { data } = await axios.get(`/api/events/${id}`);
+      setEvent(data);
+    };
+
+    fetchEvent();
+  }, [id]);
+
+  const handleRegister = async () => {
+    const token = localStorage.getItem('token');
+    await axios.post(`/api/events/register/${id}`, {}, {
+      headers: { Authorization: token },
+    });
+    setIsRegistered(true);
+  };
+
+  return (
+    <div>
+      <h1>{event.title}</h1>
+      <p>{event.description}</p>
+      <p>Date: {new Date(event.date).toLocaleDateString()}</p>
+      <p>Location: {event.location}</p>
+      <button onClick={handleRegister} disabled={isRegistered}>
+        {isRegistered ? 'Registered' : 'Register'}
+      </button>
+    </div>
+  );
+};
+
+export default EventDetailsPage;
+
+ProfilePage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const ProfilePage = () => {
+  const [user, setUser] = useState({});
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const token = localStorage.getItem('token');
+      const { data } = await axios.get('/api/users/profile', {
+        headers: { Authorization: token },
+      });
+      setUser(data);
+    };
+
+    fetchUser();
+  }, []);
+
+  return (
+    <div>
+      <h1>Profile</h1>
+      <p>Name: {user.name}</p>
+      <p>Email: {user.email}</p>
+      <h2>Registered Events:</h2>
+      <ul>
+        {user.registeredEvents?.map(event => (
+          <li key={event._id}>{event.title}</li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default ProfilePage;
+
+Step 3: Configure React Router
+In App.js, set up the routes for navigation:
+
+App.js:
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import HomePage from './pages/HomePage';
+import EventDetailsPage from './pages/EventDetailsPage';
+import ProfilePage from './pages/ProfilePage';
+
+const App = () => {
+  return (
+    <Router>
+      <Switch>
+        <Route exact path="/" component={HomePage} />
+        <Route path="/events/:id" component={EventDetailsPage} />
+        <Route path="/profile" component={ProfilePage} />
+        {/* Additional Routes for registration, etc. */}
+      </Switch>
+    </Router>
+  );
+};
+
+export default App;
+
+5. Run the Application
+Step 1: Run the Backend
+In the backend directory:
+npm start
+
+Step 2: Run the Frontend
+In the frontend directory:
+npm start
