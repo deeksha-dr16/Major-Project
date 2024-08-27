@@ -1,0 +1,534 @@
+ Project Structure
+mern-social-media/
+├── backend/
+│   ├── config/
+│   ├── controllers/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── server.js
+│   └── utils/
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── contexts/
+│   │   ├── App.js
+│   │   ├── index.js
+│   └── package.json
+└── README.md
+
+3. Backend Setup
+Step 1: Initialize Node.js Project
+Create a backend folder and navigate into it:
+
+mkdir backend && cd backend
+Initialize a new Node.js project:
+
+npm init -y
+Install necessary dependencies:
+npm install express mongoose bcryptjs jsonwebtoken cors dotenv
+
+
+Step 2: Setup Express Server
+Create a file named server.js in the backend folder:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+// Initialize Express
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+// Routes
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/posts', require('./routes/postRoutes'));
+
+// Start Server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+
+Step 3: Create Models
+Create a models folder and add User.js and Post.js files to define the MongoDB schemas.
+
+User.js:
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  password: {
+    type: String,
+    required: true,
+  },
+  bio: String,
+  avatar: String,
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+userSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+Post.js:
+const mongoose = require('mongoose');
+
+const postSchema = new mongoose.Schema({
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  content: {
+    type: String,
+    required: true,
+  },
+  likes: [
+    {
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    },
+  ],
+  comments: [
+    {
+      user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+      text: {
+        type: String,
+        required: true,
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+module.exports = mongoose.model('Post', postSchema);
+
+Step 4: Create Controllers
+Create a controllers folder and add userController.js and postController.js files to manage the CRUD logic for users and posts.
+
+userController.js:
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+
+// Register a new user
+const registerUser = async (req, res) => {
+  const { name, email, password } = req.body;
+
+  try {
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+      return res.status(400).json({ message: 'User already exists' });
+    }
+
+    const user = new User({ name, email, password });
+    await user.save();
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Login user
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+
+    if (user && (await user.matchPassword(password))) {
+      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        token,
+      });
+    } else {
+      res.status(401).json({ message: 'Invalid email or password' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get user profile
+const getUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (user) {
+      res.json({
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        bio: user.bio,
+        avatar: user.avatar,
+      });
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Update user profile
+const updateUserProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (user) {
+      user.name = req.body.name || user.name;
+      user.email = req.body.email || user.email;
+      user.bio = req.body.bio || user.bio;
+      user.avatar = req.body.avatar || user.avatar;
+
+      const updatedUser = await user.save();
+      res.json({
+        _id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        bio: updatedUser.bio,
+        avatar: updatedUser.avatar,
+      });
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  registerUser,
+  loginUser,
+  getUserProfile,
+  updateUserProfile,
+};
+
+
+postController.js:
+const Post = require('../models/Post');
+
+// Get all posts
+const getPosts = async (req, res) => {
+  try {
+    const posts = await Post.find().populate('user', 'name avatar').sort({ createdAt: -1 });
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Create a new post
+const createPost = async (req, res) => {
+  const { content } = req.body;
+
+  try {
+    const post = new Post({
+      content,
+      user: req.user.id,
+    });
+
+    const newPost = await post.save();
+    res.status(201).json(newPost);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// Like a post
+const likePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    
+    if (post) {
+      if (post.likes.some(like => like.user.toString() === req.user.id)) {
+        return res.status(400).json({ message: 'Post already liked' });
+      }
+      post.likes.push({ user: req.user.id });
+      await post.save();
+      res.json(post);
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Comment on a post
+const commentOnPost = async (req, res) => {
+  const { text } = req.body;
+
+  try {
+    const post = await Post.findById(req.params.id);
+    
+    if (post) {
+      const comment = {
+        user: req.user.id,
+        text,
+      };
+
+      post.comments.push(comment);
+      await post.save();
+      res.json(post);
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Delete a post
+const deletePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+
+    if (post) {
+      if (post.user.toString() === req.user.id) {
+        await post.remove();
+        res.json({ message: 'Post removed' });
+      } else {
+        res.status(401).json({ message: 'User not authorized' });
+      }
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  getPosts,
+  createPost,
+  likePost,
+  commentOnPost,
+  deletePost,
+};
+
+Step 5: Setup Routes
+Create a routes folder and add userRoutes.js and postRoutes.js to define the API endpoints.
+
+userRoutes.js:
+const express = require('express');
+const { registerUser, loginUser, getUserProfile, updateUserProfile } = require('../controllers/userController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/register', registerUser);
+router.post('/login', loginUser);
+router.get('/profile', protect, getUserProfile);
+router.put('/profile', protect, updateUserProfile);
+
+module.exports = router;
+
+postRoutes.js:
+const express = require('express');
+const { getPosts, createPost, likePost, commentOnPost, deletePost } = require('../controllers/postController');
+const { protect } = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.route('/').get(getPosts).post(protect, createPost);
+router.route('/:id').put(protect, likePost).delete(protect, deletePost);
+router.route('/:id/comment').post(protect, commentOnPost);
+
+module.exports = router;
+
+Step 6: Middleware for Authentication
+Create a middleware folder and add authMiddleware.js for JWT authentication.
+
+authMiddleware.js:
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+      next();
+    } catch (error) {
+      res.status(401).json({ message: 'Not authorized, token failed' });
+    }
+  }
+
+  if (!token) {
+    res.status(401).json({ message: 'Not authorized, no token' });
+  }
+};
+
+module.exports = { protect };
+
+4. Frontend Setup
+Step 1: Initialize React Application
+Create a frontend folder and navigate into it:
+
+mkdir frontend && cd frontend
+Initialize a new React application using Create React App:
+
+npx create-react-app .
+Install necessary dependencies:
+
+npm install axios react-router-dom
+
+Step 2: Create Components and Pages
+
+HomePage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Link } from 'react-router-dom';
+
+const HomePage = () => {
+  const [posts, setPosts] = useState([]);
+
+  useEffect(() => {
+    const fetchPosts = async () => {
+      const { data } = await axios.get('/api/posts');
+      setPosts(data);
+    };
+
+    fetchPosts();
+  }, []);
+
+  return (
+    <div>
+      <h1>Recent Posts</h1>
+      {posts.map(post => (
+        <div key={post._id}>
+          <Link to={`/posts/${post._id}`}>
+            <h2>{post.content}</h2>
+          </Link>
+          <p>By {post.user.name}</p>
+          <hr />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default HomePage;
+
+ProfilePage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const ProfilePage = ({ match }) => {
+  const [user, setUser] = useState({});
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data } = await axios.get(`/api/users/profile`);
+      setUser(data);
+    };
+
+    fetchUser();
+  }, [match]);
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>Email: {user.email}</p>
+      <p>Bio: {user.bio}</p>
+    </div>
+  );
+};
+
+export default ProfilePage;
+
+Step 3: Setup React Router
+Update App.js to include routes:
+
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import HomePage from './pages/HomePage';
+import ProfilePage from './pages/ProfilePage';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
+5. Run and Test the Application
+Backend:
+Start the server:
+cd backend
+node server.js
+Frontend:
+
+Start the React development server:
+cd frontend
+npm start
