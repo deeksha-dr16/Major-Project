@@ -1,0 +1,236 @@
+ Setup Express Server:
+
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+// Initialize Express
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+// Start Server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+ Create Task Model:
+
+const mongoose = require('mongoose');
+
+const TaskSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+  },
+  completed: {
+    type: Boolean,
+    default: false,
+  },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Task', TaskSchema);
+
+Create Routes for CRUD Operations:
+
+const express = require('express');
+const Task = require('../models/Task');
+
+const router = express.Router();
+
+// Get all tasks
+router.get('/', async (req, res) => {
+  try {
+    const tasks = await Task.find();
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Create a new task
+router.post('/', async (req, res) => {
+  const task = new Task({
+    title: req.body.title,
+  });
+
+  try {
+    const newTask = await task.save();
+    res.status(201).json(newTask);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// Update a task
+router.patch('/:id', async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (task == null) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    if (req.body.title != null) {
+      task.title = req.body.title;
+    }
+
+    if (req.body.completed != null) {
+      task.completed = req.body.completed;
+    }
+
+    const updatedTask = await task.save();
+    res.json(updatedTask);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// Delete a task
+router.delete('/:id', async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (task == null) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    await task.remove();
+    res.json({ message: 'Task deleted' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+module.exports = router;
+
+Setup Components and State Management:
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import TaskItem from './TaskItem';
+import TaskForm from './TaskForm';
+
+const TaskList = () => {
+  const [tasks, setTasks] = useState([]);
+
+  useEffect(() => {
+    const fetchTasks = async () => {
+      const response = await axios.get('/tasks');
+      setTasks(response.data);
+    };
+
+    fetchTasks();
+  }, []);
+
+  const addTask = async (title) => {
+    const response = await axios.post('/tasks', { title });
+    setTasks([...tasks, response.data]);
+  };
+
+  const updateTask = async (id, updatedTask) => {
+    await axios.patch(`/tasks/${id}`, updatedTask);
+    setTasks(tasks.map(task => task._id === id ? { ...task, ...updatedTask } : task));
+  };
+
+  const deleteTask = async (id) => {
+    await axios.delete(`/tasks/${id}`);
+    setTasks(tasks.filter(task => task._id !== id));
+  };
+
+  return (
+    <div>
+      <h1>To-Do List</h1>
+      <TaskForm addTask={addTask} />
+      {tasks.map(task => (
+        <TaskItem key={task._id} task={task} updateTask={updateTask} deleteTask={deleteTask} />
+      ))}
+    </div>
+  );
+};
+
+export default TaskList;
+
+import React, { useState } from 'react';
+
+const TaskForm = ({ addTask }) => {
+  const [title, setTitle] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!title) return;
+
+    addTask(title);
+    setTitle('');
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="text"
+        placeholder="Add a new task"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+      />
+      <button type="submit">Add</button>
+    </form>
+  );
+};
+export default TaskForm;
+
+
+
+import React from 'react';
+
+const TaskItem = ({ task, updateTask, deleteTask }) => {
+  const handleToggleComplete = () => {
+    updateTask(task._id, { completed: !task.completed });
+  };
+
+  const handleDelete = () => {
+    deleteTask(task._id);
+  };
+
+  return (
+    <div>
+      <span style={{ textDecoration: task.completed ? 'line-through' : 'none' }}>
+        {task.title}
+      </span>gleComplete}>
+        {task.completed ? 'Undo' : 'Complete'}
+      </button>
+      <button onClick={handleDelete}>Delete</button>
+    </div>
+  );
+};
+
+export default TaskItem;
+
+Update App Component:
+
+import React from 'react';
+import TaskList from './components/TaskList';
+
+function App() {
+  return (
+    <div className="App">
+      <TaskList />
+    </div>
+  );
+}
+
+export default App;
+
+Proxy Setup:
+"proxy": "http://localhost:5000"
+
+
