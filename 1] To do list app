@@ -1,4 +1,20 @@
- Setup Express Server:
+Project Structure:
+
+mern-todo-app/
+├── backend/
+│   ├── models/
+│   ├── routes/
+│   ├── server.js
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── App.js
+│   │   ├── index.js
+│   └── package.json
+└── README.md
+
+Setup Express Server: 
 
 const express = require('express');
 const mongoose = require('mongoose');
