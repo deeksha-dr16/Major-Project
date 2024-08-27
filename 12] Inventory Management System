@@ -1,0 +1,319 @@
+1. Initialize the Project
+Create a new directory for the project and initialize it:
+mkdir inventory-management-system
+cd inventory-management-system
+git init
+npm init -y
+
+2. Set Up the Backend (Node.js + Express + MongoDB)
+Install dependencies:
+npm install express mongoose dotenv bcryptjs jsonwebtoken cors
+npm install --save-dev nodemon
+
+
+Project Structure:
+inventory-management-system/
+├── backend/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── config/
+│   ├── server.js
+├── frontend/
+└── .env
+
+server.js: Set up Express server and MongoDB connection.
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.log(err));
+
+// Routes
+app.use('/api/products', require('./routes/productRoutes'));
+app.use('/api/orders', require('./routes/orderRoutes'));
+app.use('/api/sales', require('./routes/saleRoutes'));
+app.use('/api/deliveries', require('./routes/deliveryRoutes'));
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+.env: Configure environment variables.
+
+MONGO_URI=mongodb://localhost:27017/inventory-management
+JWT_SECRET=your_jwt_secret
+
+
+3. Create Models (MongoDB Schema)
+Product Model (models/Product.js):
+const mongoose = require('mongoose');
+
+const ProductSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String },
+  quantity: { type: Number, required: true },
+  price: { type: Number, required: true },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Product', ProductSchema);
+
+
+Order Model (models/Order.js):
+const mongoose = require('mongoose');
+
+const OrderSchema = new mongoose.Schema({
+  customerName: { type: String, required: true },
+  products: [{
+    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+    quantity: { type: Number, required: true }
+  }],
+  totalAmount: { type: Number, required: true },
+  orderDate: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Order', OrderSchema);
+
+
+Sale Model (models/Sale.js):
+const mongoose = require('mongoose');
+
+const SaleSchema = new mongoose.Schema({
+  product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
+  quantity: { type: Number, required: true },
+  saleDate: { type: Date, default: Date.now },
+  totalAmount: { type: Number, required: true },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Sale', SaleSchema);
+
+Delivery Model (models/Delivery.js):
+const mongoose = require('mongoose');
+
+const DeliverySchema = new mongoose.Schema({
+  order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true },
+  deliveryDate: { type: Date, required: true },
+  status: { type: String, enum: ['Pending', 'Shipped', 'Delivered'], default: 'Pending' },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Delivery', DeliverySchema);
+
+
+4. Create Routes and Controllers
+Product Routes (routes/productRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createProduct, getProducts, updateProduct, deleteProduct } = require('../controllers/productController');
+const { protect, admin } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, admin, createProduct)
+  .get(protect, getProducts);
+
+router.route('/:id')
+  .put(protect, admin, updateProduct)
+  .delete(protect, admin, deleteProduct);
+
+module.exports = router;
+
+
+Order Routes (routes/orderRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createOrder, getOrders, updateOrder, deleteOrder } = require('../controllers/orderController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createOrder)
+  .get(protect, getOrders);
+
+router.route('/:id')
+  .put(protect, updateOrder)
+  .delete(protect, deleteOrder);
+
+module.exports = router;
+
+
+Sale Routes (routes/saleRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createSale, getSales, updateSale, deleteSale } = require('../controllers/saleController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createSale)
+  .get(protect, getSales);
+
+router.route('/:id')
+  .put(protect, updateSale)
+  .delete(protect, deleteSale);
+
+module.exports = router;
+
+
+Delivery Routes (routes/deliveryRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createDelivery, getDeliveries, updateDelivery, deleteDelivery } = require('../controllers/deliveryController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createDelivery)
+  .get(protect, getDeliveries);
+
+router.route('/:id')
+  .put(protect, updateDelivery)
+  .delete(protect, deleteDelivery);
+
+module.exports = router;
+
+
+5. Set Up Middleware
+Auth Middleware (middleware/authMiddleware.js):
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+
+      next();
+    } catch (error) {
+      res.status(401);
+      throw new Error('Not authorized, token failed');
+    }
+  }
+
+  if (!token) {
+    res.status(401);
+    throw new Error('Not authorized, no token');
+  }
+};
+
+const admin = (req, res, next) => {
+  if (req.user && req.user.role === 'Admin') {
+    next();
+  } else {
+    res.status(403);
+    throw new Error('Not authorized as an Admin');
+  }
+};
+
+module.exports = { protect, admin };
+
+
+6. Implement Frontend (React)
+Set up React App:
+npx create-react-app frontend
+cd frontend
+npm install axios react-router-dom
+
+
+Project Structure:
+frontend/
+├── public/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── context/
+│   ├── App.js
+│   ├── index.js
+│   ├── index.css
+└── package.json
+
+
+App.js: Set up routing and context.
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import ProductManagementPage from './pages/ProductManagementPage';
+import OrderManagementPage from './pages/OrderManagementPage';
+import SaleManagementPage from './pages/SaleManagementPage';
+import DeliveryManagementPage from './pages/DeliveryManagementPage';
+
+const App = () => {
+  return (
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/products" element={<ProductManagementPage />} />
+          <Route path="/orders" element={<OrderManagementPage />} />
+          <Route path="/sales" element={<SaleManagementPage />} />
+          <Route path="/deliveries" element={<DeliveryManagementPage />} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
+};
+
+export default App;
+
+
+Auth Context (context/AuthContext.js):
+import React, { createContext, useState } from 'react';
+
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  const login = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
+
+7. Implement Pages and Components
+HomePage, LoginPage, RegisterPage, ProductManagementPage, OrderManagementPage, SaleManagementPage, DeliveryManagementPage: Create pages for managing different aspects of the inventory system. Use Axios to interact with the backend API for CRUD operations.
+
+8. Connect Frontend to Backend
+Set up proxy in frontend/package.json to simplify API calls:
+"proxy": "http://localhost:5000"
+Use Axios in components to make API requests (e.g., login, register, add product, get products).
+
+
+9. Test and Deploy
+Testing: Run the backend and frontend servers to test the application locally.
+# In the backend directory
+npm run server
+
+# In the frontend directory
+npm start
