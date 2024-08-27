@@ -1,0 +1,438 @@
+Project Setup
+1. Initialize the Project
+Create a new directory for the project and initialize it:
+mkdir expense-tracker
+cd expense-tracker
+git init
+npm init -y
+
+2. Set Up the Backend (Node.js + Express + MongoDB)
+Install dependencies:
+npm install express mongoose dotenv cors
+npm install --save-dev nodemon
+
+
+Project Structure:
+expense-tracker/
+├── backend/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── config/
+│   ├── server.js
+├── frontend/
+└── .env
+
+
+server.js: Set up Express server and MongoDB connection.
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.log(err));
+
+// Routes
+app.use('/api/expenses', require('./routes/expenseRoutes'));
+app.use('/api/categories', require('./routes/categoryRoutes'));
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+.env: Configure environment variables.
+MONGO_URI=mongodb://localhost:27017/expense-tracker
+
+
+3. Create Models (MongoDB Schema)
+Expense Model (models/Expense.js):
+const mongoose = require('mongoose');
+
+const ExpenseSchema = new mongoose.Schema({
+  amount: { type: Number, required: true },
+  description: { type: String, required: true },
+  category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
+  date: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Expense', ExpenseSchema);
+
+
+Category Model (models/Category.js):
+const mongoose = require('mongoose');
+
+const CategorySchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Category', CategorySchema);
+
+
+4. Create Routes and Controllers
+Expense Routes (routes/expenseRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createExpense, getExpenses, updateExpense, deleteExpense } = require('../controllers/expenseController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createExpense)
+  .get(protect, getExpenses);
+
+router.route('/:id')
+  .put(protect, updateExpense)
+  .delete(protect, deleteExpense);
+
+module.exports = router;
+
+
+Category Routes (routes/categoryRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { createCategory, getCategories, updateCategory, deleteCategory } = require('../controllers/categoryController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, createCategory)
+  .get(protect, getCategories);
+
+router.route('/:id')
+  .put(protect, updateCategory)
+  .delete(protect, deleteCategory);
+
+module.exports = router;
+
+
+5. Implement Controllers
+Expense Controller (controllers/expenseController.js):
+const Expense = require('../models/Expense');
+
+const createExpense = async (req, res) => {
+  try {
+    const expense = await Expense.create(req.body);
+    res.status(201).json(expense);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const getExpenses = async (req, res) => {
+  try {
+    const expenses = await Expense.find().populate('category');
+    res.json(expenses);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateExpense = async (req, res) => {
+  try {
+    const expense = await Expense.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+    res.json(expense);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteExpense = async (req, res) => {
+  try {
+    const expense = await Expense.findByIdAndDelete(req.params.id);
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+    res.json({ message: 'Expense deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createExpense, getExpenses, updateExpense, deleteExpense };
+
+
+Category Controller (controllers/categoryController.js):
+const Category = require('../models/Category');
+
+const createCategory = async (req, res) => {
+  try {
+    const category = await Category.create(req.body);
+    res.status(201).json(category);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const getCategories = async (req, res) => {
+  try {
+    const categories = await Category.find();
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+const updateCategory = async (req, res) => {
+  try {
+    const category = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+    res.json(category);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+const deleteCategory = async (req, res) => {
+  try {
+    const category = await Category.findByIdAndDelete(req.params.id);
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
+    }
+    res.json({ message: 'Category deleted' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { createCategory, getCategories, updateCategory, deleteCategory };
+
+
+6. Set Up Middleware
+Auth Middleware (middleware/authMiddleware.js):
+For simplicity, this example assumes public access to routes. Implement authentication middleware if needed.
+
+javascript
+Copy code
+const protect = (req, res, next) => {
+  // Example placeholder: actual implementation required
+  next();
+};
+
+module.exports = { protect };
+
+
+7. Implement Frontend (React)
+Set up React App:
+npx create-react-app frontend
+cd frontend
+npm install axios react-router-dom chart.js react-chartjs-2
+
+
+Project Structure:
+frontend/
+├── public/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── context/
+│   ├── App.js
+│   ├── index.js
+│   ├── index.css
+└── package.json
+
+
+App.js: Set up routing and context.
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import ExpensePage from './pages/ExpensePage';
+import CategoryPage from './pages/CategoryPage';
+import DashboardPage from './pages/DashboardPage';
+
+const App = () => {
+  return (
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/expenses" element={<ExpensePage />} />
+          <Route path="/categories" element={<CategoryPage />} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
+};
+
+export default App;
+
+
+Auth Context (context/AuthContext.js):
+import React, { createContext, useState } from 'react';
+
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  const login = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
+
+
+8. Implement Pages and Components
+ExpensePage, CategoryPage, DashboardPage: Create pages for managing expenses, categories, and visualizing spending. Use Axios to interact with the backend API for CRUD operations.
+
+ExpenseForm (components/ExpenseForm.js):
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+
+const ExpenseForm = ({ expense, onSubmit }) => {
+  const [amount, setAmount] = useState(expense ? expense.amount : '');
+  const [description, setDescription] = useState(expense ? expense.description : '');
+  const [category, setCategory] = useState(expense ? expense.category : '');
+  const [categories, setCategories] = useState([]);
+
+  useEffect(() => {
+    // Fetch categories for select input
+    axios.get('/api/categories')
+      .then(response => setCategories(response.data))
+      .catch(error => console.error('Error fetching categories:', error));
+  }, []);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const expenseData = { amount, description, category };
+    onSubmit(expenseData);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="Amount"
+        required
+      />
+      <input
+        type="text"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description"
+        required
+      />
+      <select
+        value={category}
+        onChange={(e) => setCategory(e.target.value)}
+        required
+      >
+        <option value="">Select Category</option>
+        {categories.map(cat => (
+          <option key={cat._id} value={cat._id}>{cat.name}</option>
+        ))}
+      </select>
+      <button type="submit">Save Expense</button>
+    </form>
+  );
+};
+
+export default ExpenseForm;
+
+
+DashboardPage (pages/DashboardPage.js): Use Chart.js to visualize spending.
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import { Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale } from 'chart.js';
+
+ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale);
+
+const DashboardPage = () => {
+  const [data, setData] = useState({});
+
+  useEffect(() => {
+    axios.get('/api/expenses')
+      .then(response => {
+        const expenses = response.data;
+        const categories = {};
+        expenses.forEach(exp => {
+          const cat = exp.category.name;
+          if (!categories[cat]) {
+            categories[cat] = 0;
+          }
+          categories[cat] += exp.amount;
+        });
+
+        setData({
+          labels: Object.keys(categories),
+          datasets: [{
+            label: 'Expenses by Category',
+            data: Object.values(categories),
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1,
+          }]
+        });
+      })
+      .catch(error => console.error('Error fetching expenses:', error));
+  }, []);
+
+  return (
+    <div>
+      <h1>Expense Dashboard</h1>
+      <Bar
+        data={data}
+        options={{
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'top',
+            },
+            title: {
+              display: true,
+              text: 'Expenses by Category',
+            },
+          },
+        }}
+      />
+    </div>
+  );
+};
+
+export default DashboardPage;
+
+
+9. Connect Frontend to Backend
+Set up proxy in frontend/package.json to simplify API calls:
+"proxy": "http://localhost:5000"
+Use Axios in components to make API requests (e.g., add expense, get expenses).
+
+
+10. Test and Deploy
+Testing: Run the backend and frontend servers to test the application locally.
+# In the backend directory
+npm run server
+
+# In the frontend directory
+npm start
