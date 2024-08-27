@@ -1,0 +1,279 @@
+Project Setup
+1. Initialize the Project
+Create a new directory for the project and initialize it with Git and npm:
+mkdir fitness-tracker
+cd fitness-tracker
+git init
+npm init -y
+
+2. Set Up the Backend (Node.js + Express + MongoDB)
+Install dependencies:
+npm install express mongoose dotenv bcryptjs jsonwebtoken cors
+npm install --save-dev nodemon
+
+
+Project Structure:
+fitness-tracker/
+├── backend/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── middleware/
+│   ├── config/
+│   ├── server.js
+├── frontend/
+└── .env
+
+
+server.js: Set up Express server and MongoDB connection.
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch(err => console.log(err));
+
+// Routes
+app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/workouts', require('./routes/workoutRoutes'));
+app.use('/api/diets', require('./routes/dietRoutes'));
+
+// Start server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+.env: Configure environment variables.
+MONGO_URI=mongodb://localhost:27017/fitness-tracker
+JWT_SECRET=your_jwt_secret
+
+
+3. Create Models (MongoDB Schema)
+User Model (models/User.js):
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const UserSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+}, { timestamps: true });
+
+UserSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+UserSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+module.exports = mongoose.model('User', UserSchema);
+
+
+Workout Model (models/Workout.js):
+const mongoose = require('mongoose');
+
+const WorkoutSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, required: true },
+  duration: { type: Number, required: true },
+  calories: { type: Number, required: true },
+  date: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Workout', WorkoutSchema);
+Diet Model (models/Diet.js):
+javascript
+Copy code
+const mongoose = require('mongoose');
+
+const DietSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  meal: { type: String, required: true },
+  calories: { type: Number, required: true },
+  date: { type: Date, default: Date.now },
+}, { timestamps: true });
+
+module.exports = mongoose.model('Diet', DietSchema);
+
+
+4. Create Routes and Controllers
+User Routes (routes/userRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { registerUser, loginUser, getUserProfile } = require('../controllers/userController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.post('/register', registerUser);
+router.post('/login', loginUser);
+router.get('/profile', protect, getUserProfile);
+
+module.exports = router;
+
+Workout Routes (routes/workoutRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { addWorkout, getWorkouts, updateWorkout, deleteWorkout } = require('../controllers/workoutController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, addWorkout)
+  .get(protect, getWorkouts);
+
+router.route('/:id')
+  .put(protect, updateWorkout)
+  .delete(protect, deleteWorkout);
+
+module.exports = router;
+
+
+Diet Routes (routes/dietRoutes.js):
+const express = require('express');
+const router = express.Router();
+const { addDiet, getDiets, updateDiet, deleteDiet } = require('../controllers/dietController');
+const { protect } = require('../middleware/authMiddleware');
+
+router.route('/')
+  .post(protect, addDiet)
+  .get(protect, getDiets);
+
+router.route('/:id')
+  .put(protect, updateDiet)
+  .delete(protect, deleteDiet);
+
+module.exports = router;
+
+
+5. Set Up Middleware
+Auth Middleware (middleware/authMiddleware.js):
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const protect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = await User.findById(decoded.id).select('-password');
+
+      next();
+    } catch (error) {
+      res.status(401);
+      throw new Error('Not authorized, token failed');
+    }
+  }
+
+  if (!token) {
+    res.status(401);
+    throw new Error('Not authorized, no token');
+  }
+};
+
+module.exports = { protect };
+
+
+6. Implement Frontend (React)
+Set up React App:
+npx create-react-app frontend
+cd frontend
+npm install axios react-router-dom
+
+Project Structure:
+frontend/
+├── public/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── context/
+│   ├── App.js
+│   ├── index.js
+│   ├── index.css
+└── package.json
+
+
+App.js: Set up routing and context.
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import DashboardPage from './pages/DashboardPage';
+
+const App = () => {
+  return (
+    <Router>
+      <AuthProvider>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+        </Routes>
+      </AuthProvider>
+    </Router>
+  );
+};
+
+export default App;
+
+Auth Context (context/AuthContext.js):
+import React, { createContext, useState } from 'react';
+
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+
+  const login = (userData) => {
+    setUser(userData);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export default AuthContext;
+
+7. Implement Pages and Components
+HomePage, LoginPage, RegisterPage, DashboardPage: Create pages that utilize the AuthContext for user state and perform CRUD operations using Axios to communicate with the backend API.
+8. Connect Frontend to Backend
+Set up proxy in frontend/package.json to simplify API calls:
+"proxy": "http://localhost:5000"
+Use Axios in components to make API requests (e.g., login, register, add workout, get workouts).
+
+9. Test and Deploy
+Testing: Run the backend and frontend servers to test the application locally.
+
+# In the backend directory
+npm run server
+
+# In the frontend directory
+npm start
