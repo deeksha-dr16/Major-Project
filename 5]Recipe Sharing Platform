@@ -1,0 +1,332 @@
+Project Structure
+mern-recipe-app/
+├── backend/
+│   ├── config/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── server.js
+│   └── .env
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── App.js
+│   │   └── index.js
+│   └── package.json
+└── README.md
+
+3. Backend Setup
+Step 1: Initialize the Backend
+Create the Backend Directory:
+mkdir backend && cd backend
+Initialize a Node.js Project:
+
+
+npm init -y
+Install Necessary Dependencies:
+
+
+npm install express mongoose dotenv cors
+Create Basic Files and Folders:
+Create server.js, config, controllers, models, routes folders.
+
+Step 2: Set Up the Server
+
+server.js:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+// Initialize the app
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(cors());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('MongoDB connected'))
+.catch((err) => console.error('MongoDB connection error:', err));
+
+// Routes
+app.use('/api/recipes', require('./routes/recipeRoutes'));
+
+// Start the server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+Step 3: Configure Environment Variables
+Create a .env file in the backend directory:
+
+MONGO_URI=mongodb://localhost:27017/mern-recipe-app
+Replace the MongoDB URI with your own if you're using MongoDB Atlas or a different setup.
+
+Step 4: Define the Recipe Model
+Create a models folder and add a file named Recipe.js:
+
+models/Recipe.js:
+
+const mongoose = require('mongoose');
+
+const recipeSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+  },
+  ingredients: {
+    type: [String],
+    required: true,
+  },
+  instructions: {
+    type: String,
+    required: true,
+  },
+  category: {
+    type: String,
+    enum: ['Breakfast', 'Lunch', 'Dinner', 'Snack', 'Dessert'],
+  },
+  author: {
+    type: String,
+    required: true,
+  },
+  likes: {
+    type: Number,
+    default: 0,
+  },
+  isFavorite: {
+    type: Boolean,
+    default: false,
+  },
+}, {
+  timestamps: true,
+});
+
+module.exports = mongoose.model('Recipe', recipeSchema);
+Step 5: Create Controllers
+Create a controllers folder and add a file named recipeController.js:
+
+controllers/recipeController.js:
+const Recipe = require('../models/Recipe');
+
+// Create a new recipe
+const createRecipe = async (req, res) => {
+  const { title, ingredients, instructions, category, author } = req.body;
+
+  try {
+    const newRecipe = new Recipe({ title, ingredients, instructions, category, author });
+    const savedRecipe = await newRecipe.save();
+    res.status(201).json(savedRecipe);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get all recipes
+const getAllRecipes = async (req, res) => {
+  try {
+    const recipes = await Recipe.find({});
+    res.status(200).json(recipes);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Get a single recipe by ID
+const getRecipeById = async (req, res) => {
+  try {
+    const recipe = await Recipe.findById(req.params.id);
+    if (recipe) {
+      res.status(200).json(recipe);
+    } else {
+      res.status(404).json({ message: 'Recipe not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Update a recipe
+const updateRecipe = async (req, res) => {
+  try {
+    const recipe = await Recipe.findById(req.params.id);
+    if (recipe) {
+      recipe.title = req.body.title || recipe.title;
+      recipe.ingredients = req.body.ingredients || recipe.ingredients;
+      recipe.instructions = req.body.instructions || recipe.instructions;
+      recipe.category = req.body.category || recipe.category;
+      recipe.author = req.body.author || recipe.author;
+
+      const updatedRecipe = await recipe.save();
+      res.json(updatedRecipe);
+    } else {
+      res.status(404).json({ message: 'Recipe not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Delete a recipe
+const deleteRecipe = async (req, res) => {
+  try {
+    const recipe = await Recipe.findById(req.params.id);
+    if (recipe) {
+      await recipe.remove();
+      res.json({ message: 'Recipe removed' });
+    } else {
+      res.status(404).json({ message: 'Recipe not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  createRecipe,
+  getAllRecipes,
+  getRecipeById,
+  updateRecipe,
+  deleteRecipe,
+};
+
+Step 6: Setup Routes
+Create a routes folder and add recipeRoutes.js to define the API endpoints.
+
+routes/recipeRoutes.js:
+const express = require('express');
+const { createRecipe, getAllRecipes, getRecipeById, updateRecipe, deleteRecipe } = require('../controllers/recipeController');
+
+const router = express.Router();
+
+router.route('/').get(getAllRecipes).post(createRecipe);
+router.route('/:id').get(getRecipeById).put(updateRecipe).delete(deleteRecipe);
+
+module.exports = router;
+
+4. Frontend Setup
+Step 1: Initialize React Application
+Create the Frontend Directory:
+
+
+mkdir frontend && cd frontend
+Initialize a new React Application:
+
+
+npx create-react-app .
+Install Necessary Dependencies:
+
+
+npm install axios react-router-dom
+Step 2: Create Components and Pages
+components/: Shared UI components like buttons, forms, recipe cards, etc.
+pages/: Different pages like Home, Recipe Details, Add Recipe, Edit Recipe.
+Create these essential components and pages:
+
+HomePage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Link } from 'react-router-dom';
+
+const HomePage = () => {
+  const [recipes, setRecipes] = useState([]);
+
+  useEffect(() => {
+    const fetchRecipes = async () => {
+      const { data } = await axios.get('/api/recipes');
+      setRecipes(data);
+    };
+
+    fetchRecipes();
+  }, []);
+
+  return (
+    <div>
+      <h1>Recipe List</h1>
+      {recipes.map(recipe => (
+        <div key={recipe._id}>
+          <Link to={`/recipes/${recipe._id}`}>
+            <h2>{recipe.title}</h2>
+          </Link>
+          <p>{recipe.category}</p>
+          <hr />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+export default HomePage;
+
+RecipeDetailsPage.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useParams } from 'react-router-dom';
+
+const RecipeDetailsPage = () => {
+  const { id } = useParams();
+  const [recipe, setRecipe] = useState({});
+
+  useEffect(() => {
+    const fetchRecipe = async () => {
+      const { data } = await axios.get(`/api/recipes/${id}`);
+      setRecipe(data);
+    };
+
+    fetchRecipe();
+  }, [id]);
+return (
+    <div>
+      <h1>{recipe.title}</h1>
+      <p>Category: {recipe.category}</p>
+      <p>Ingredients: {recipe.ingredients?.join(', ')}</p>
+      <p>Instructions: {recipe.instructions}</p>
+      <p>Author: {recipe.author}</p>
+    </div>
+  );
+};
+
+export default RecipeDetailsPage;
+
+Step 3: Configure React Router
+In App.js, set up the routes for navigation:
+
+App.js:
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import HomePage from './pages/HomePage';
+import RecipeDetailsPage from './pages/RecipeDetailsPage';
+
+const App = () => {
+  return (
+    <Router>
+      <Switch>
+        <Route exact path="/" component={HomePage} />
+        <Route path="/recipes/:id" component={RecipeDetailsPage} />
+        {/* Additional Routes for Create, Edit, etc. */}
+      </Switch>
+    </Router>
+  );
+};
+
+export default App;
+
+5. Run the Application
+Step 1: Run the Backend
+In the backend directory:
+
+
+npm start
+Step 2: Run the Frontend
+In the frontend directory:
+
+
+npm start
