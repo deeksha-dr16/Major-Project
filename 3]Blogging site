@@ -1,0 +1,401 @@
+Project Structure:
+mern-blogging-site/
+├── backend/
+│   ├── config/
+│   ├── controllers/
+│   ├── models/
+│   ├── routes/
+│   ├── server.js
+│   └── utils/
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── App.js
+│   │   ├── index.js
+│   └── package.json
+└── README.md
+
+3. Backend Setup
+Step 1: Initialize Node.js Project
+Create a backend folder and navigate into it:
+
+mkdir backend && cd backend
+Initialize a new Node.js project:
+
+npm init -y
+Install necessary dependencies:
+
+npm install express mongoose cors dotenv
+
+
+Step 2: Setup Express Server
+Create a file named server.js in the backend folder:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
+
+// Initialize Express
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+// Routes
+app.use('/api/posts', require('./routes/postRoutes'));
+
+// Start Server
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+
+Step 3: Create Models
+Create a models folder and add a Post.js file for the MongoDB schema:
+Post.js:
+
+const mongoose = require('mongoose');
+
+const postSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+  },
+  content: {
+    type: String,
+    required: true,
+  },
+  author: {
+    type: String,
+    required: true,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
+
+module.exports = mongoose.model('Post', postSchema);
+
+
+Step 4: Create Controllers
+Create a controllers folder and add a postController.js file to manage the CRUD logic for posts:
+
+postController.js:
+const Post = require('../models/Post');
+
+// Get all posts
+const getPosts = async (req, res) => {
+  try {
+    const posts = await Post.find();
+    res.json(posts);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Create a new post
+const createPost = async (req, res) => {
+  const { title, content, author } = req.body;
+
+  const post = new Post({
+    title,
+    content,
+    author,
+  });
+
+  try {
+    const newPost = await post.save();
+    res.status(201).json(newPost);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// Get a single post by ID
+const getPostById = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (post) {
+      res.json(post);
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Update a post
+const updatePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (post) {
+      post.title = req.body.title || post.title;
+      post.content = req.body.content || post.content;
+      post.author = req.body.author || post.author;
+      post.updatedAt = Date.now();
+
+      const updatedPost = await post.save();
+      res.json(updatedPost);
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+};
+
+// Delete a post
+const deletePost = async (req, res) => {
+  try {
+    const post = await Post.findById(req.params.id);
+    if (post) {
+      await post.remove();
+      res.json({ message: 'Post deleted' });
+    } else {
+      res.status(404).json({ message: 'Post not found' });
+    }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = {
+  getPosts,
+  createPost,
+  getPostById,
+  updatePost,
+  deletePost,
+};
+
+
+Step 5: Create Routes
+Create a routes folder and a postRoutes.js file for the post routes:
+
+postRoutes.js:
+const express = require('express');
+const {
+  getPosts,
+  createPost,
+  getPostById,
+  updatePost,
+  deletePost,
+} = require('../controllers/postController');
+
+const router = express.Router();
+
+router.route('/')
+  .get(getPosts)
+  .post(createPost);
+
+router.route('/:id')
+  .get(getPostById)
+  .put(updatePost)
+  .delete(deletePost);
+
+module.exports = router;
+
+4. Frontend Setup
+Step 1: Create React App
+Navigate to the project root and create a frontend folder:
+
+mkdir frontend && cd frontend
+Initialize a new React app:
+
+npx create-react-app .
+Install necessary dependencies:
+
+npm install axios react-router-dom
+
+Step 2: Setup Components and State Management
+Inside the src folder, create a components folder and add the following components:
+
+PostList.js: Displays the list of posts.
+PostForm.js: A form to create or update a post.
+PostDetail.js: Displays a single post with options to update or delete.
+
+PostList.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Link } from 'react-router-dom';
+
+const PostList = () => {
+  const [posts, setPosts] = useState([]);
+
+  useEffect(() => {
+    const fetchPosts = async () => {
+      const response = await axios.get('/api/posts');
+      setPosts(response.data);
+    };
+
+    fetchPosts();
+  }, []);
+
+  return (
+    <div>
+      <h1>Blog Posts</h1>
+      <Link to="/create">Create New Post</Link>
+      <ul>
+        {posts.map(post => (
+          <li key={post._id}>
+            <Link to={`/posts/${post._id}`}>{post.title}</Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default PostList;
+
+
+PostForm.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useNavigate, useParams } from 'react-router-dom';
+
+const PostForm = () => {
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [author, setAuthor] = useState('');
+  const navigate = useNavigate();
+  const { id } = useParams();
+
+  useEffect(() => {
+    if (id) {
+      const fetchPost = async () => {
+        const response = await axios.get(`/api/posts/${id}`);
+        setTitle(response.data.title);
+        setContent(response.data.content);
+        setAuthor(response.data.author);
+      };
+
+      fetchPost();
+    }
+  }, [id]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const postData = { title, content, author };
+
+    if (id) {
+      await axios.put(`/api/posts/${id}`, postData);
+    } else {
+      await axios.post('/api/posts', postData);
+    }
+
+    navigate('/');
+  };
+
+  return (
+    <div>
+      <h1>{id ? 'Edit Post' : 'Create Post'}</h1>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label>Title</label>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required />
+        </div>
+        <div>
+          <label>Content</label>
+          <textarea value={content} onChange={(e) => setContent(e.target.value)} required></textarea>
+        </div>
+        <div>
+          <label>Author</label>
+          <input type="text" value={author} onChange={(e) => setAuthor(e.target.value)} required />
+        </div>
+        <button type="submit">Submit</button>
+      </form>
+    </div>
+  );
+};
+
+export default PostForm;
+
+
+PostDetail.js:
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useParams, useNavigate } from 'react-router-dom';
+
+const PostDetail = () => {
+  const [post, setPost] = useState({});
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const fetchPost = async () => {
+      const response = await axios.get(`/api/posts/${id}`);
+      setPost(response.data);
+    };
+
+    fetchPost();
+  }, [id]);
+
+  const handleDelete = async () => {
+    await axios.delete(`/api/posts/${id}`);
+    navigate('/');
+  };
+
+  return (
+    <div>
+      <h1>{post.title}</h1>
+      <p>{post.content}</p>
+      <p><strong>Author:</strong> {post.author}</p>
+      <button onClick={() => navigate(`/edit/${post._id}`)}>Edit</button>
+      <button onClick={handleDelete}>Delete</button>
+    </div>
+  );
+};
+
+export default PostDetail;
+
+
+Step 3: Setup React Router
+Update App.js to include routes:
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import PostList from './components/PostList';
+import PostForm from './components/PostForm';
+import PostDetail from './components/PostDetail';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<PostList />} />
+        <Route path="/create" element={<PostForm />} />
+        <Route path="/posts/:id" element={<PostDetail />} />
+        <Route path="/edit/:id" element={<PostForm />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+5. Run and Test the Application
+Backend:
+Start the server:
+cd backend
+node server.js
+
+Frontend:
+Start the React development server:
+cd frontend
+npm start
