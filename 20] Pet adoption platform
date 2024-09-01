@@ -1,0 +1,187 @@
+ Project Setup
+Initialize the Project
+
+Create a new directory and navigate into it.
+Initialize a new Node.js project:
+npm init -y
+
+Install necessary dependencies:
+npm install express mongoose cors dotenv multer
+npm install --save-dev nodemon
+
+
+
+
+Create an index.js file for the Express server:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const multer = require('multer');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 5000;
+
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => app.listen(PORT, () => console.log(`Server running on port ${PORT}`)))
+  .catch((error) => console.error(error.message));
+
+
+
+2. Design the Database Schema
+Create Models
+User Model (User.js):
+const mongoose = require('mongoose');
+
+const userSchema = mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+
+Pet Model (Pet.js):
+const mongoose = require('mongoose');
+
+const petSchema = mongoose.Schema({
+  name: { type: String, required: true },
+  type: { type: String, required: true }, // Dog, Cat, etc.
+  breed: { type: String },
+  age: { type: Number },
+  description: { type: String },
+  imageUrl: { type: String }, // URL or filename of pet image
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model('Pet', petSchema);
+
+
+3. Implement CRUD Operations
+Set Up File Uploads
+
+Configure multer for file uploads:
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, new Date().toISOString() + file.originalname);
+  }
+});
+
+const upload = multer({ storage });
+
+
+Create Routes
+
+Pet Routes (pet.js):
+const express = require('express');
+const router = express.Router();
+const Pet = require('../models/Pet');
+const upload = require('../middlewares/upload'); // Assume multer configuration is exported from this module
+
+// Create a new pet listing
+router.post('/', upload.single('image'), async (req, res) => {
+  try {
+    const pet = new Pet({
+      ...req.body,
+      imageUrl: req.file.path,
+      user: req.user.id // Assume user ID is attached to request after authentication middleware
+    });
+    await pet.save();
+    res.status(201).json(pet);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get all pet listings
+router.get('/', async (req, res) => {
+  try {
+    const pets = await Pet.find().populate('user', 'username');
+    res.status(200).json(pets);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Update a pet listing
+router.put('/:id', upload.single('image'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updatedData = { ...req.body };
+    if (req.file) updatedData.imageUrl = req.file.path;
+    const updatedPet = await Pet.findByIdAndUpdate(id, updatedData, { new: true });
+    res.status(200).json(updatedPet);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete a pet listing
+router.delete('/:id', async (req, res) => {
+  try {
+    await Pet.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: 'Pet listing deleted successfully.' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+module.exports = router;
+
+
+Integrate Routes into Server
+Add routes to index.js:
+const petRoutes = require('./routes/pet');
+
+app.use('/pets', petRoutes);
+
+
+4. Develop the Front-End with React
+Set Up React Project
+
+Initialize React:
+npx create-react-app client
+cd client
+npm install axios react-router-dom
+
+
+Components for managing pet listings:
+PetList.js for displaying all pet listings.
+AddPet.js for creating a new pet listing.
+EditPet.js for editing an existing pet listing.
+PetDetail.js to view a pet’s details.
+
+
+
+Configure routing in App.js:
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import Home from './components/Home';
+import PetList from './components/PetList';
+import AddPet from './components/AddPet';
+import EditPet from './components/EditPet';
+import PetDetail from './components/PetDetail';
+
+function App() {
+  return (
+    <Router>
+      <Switch>
+        <Route path="/" exact component={Home} />
+        <Route path="/pets" component={PetList} />
+        <Route path="/add-pet" component={AddPet} />
+        <Route path="/edit-pet/:id" component={EditPet} />
+        <Route path="/pet/:id" component={PetDetail} />
+      </Switch>
+    </Router>
+  );
+}
+
+export default App;
