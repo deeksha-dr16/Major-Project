@@ -1,0 +1,176 @@
+ Project Setup
+Initialize the Project
+
+Create a new directory and navigate into it.
+Initialize a new Node.js project:
+npm init -y
+
+Install necessary dependencies:
+npm install express mongoose cors dotenv multer
+npm install --save-dev nodemon
+Set Up the Server
+
+
+Create an index.js file for the Express server:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const multer = require('multer');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 5000;
+
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => app.listen(PORT, () => console.log(`Server running on port ${PORT}`)))
+  .catch((error) => console.error(error.message));
+
+
+2. Design the Database Schema
+Create Models
+User Model (User.js):
+const mongoose = require('mongoose');
+
+const userSchema = mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+
+Album Model (Album.js):
+const mongoose = require('mongoose');
+
+const albumSchema = mongoose.Schema({
+  name: { type: String, required: true },
+  description: { type: String },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  photos: [{ type: String }],  // URLs or filenames of photos
+  createdAt: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model('Album', albumSchema);
+
+
+3. Implement CRUD Operations
+Set Up File Uploads
+
+Configure multer for file uploads:
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, new Date().toISOString() + file.originalname);
+  }
+});
+
+const upload = multer({ storage });
+Create Routes
+
+
+Album Routes (album.js):
+const express = require('express');
+const router = express.Router();
+const Album = require('../models/Album');
+const upload = require('../middlewares/upload'); // Assume multer configuration is exported from this module
+
+// Create a new album
+router.post('/', async (req, res) => {
+  try {
+    const album = new Album(req.body);
+    await album.save();
+    res.status(201).json(album);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Upload photos to an album
+router.post('/:id/photos', upload.array('photos', 10), async (req, res) => {
+  try {
+    const album = await Album.findById(req.params.id);
+    const photos = req.files.map(file => file.path);
+    album.photos.push(...photos);
+    await album.save();
+    res.status(200).json(album);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Get all albums
+router.get('/', async (req, res) => {
+  try {
+    const albums = await Album.find().populate('user', 'username');
+    res.status(200).json(albums);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete an album
+router.delete('/:id', async (req, res) => {
+  try {
+    await Album.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: 'Album deleted successfully.' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+module.exports = router;
+Integrate Routes into Server
+
+Add routes to index.js:
+const albumRoutes = require('./routes/album');
+
+app.use('/albums', albumRoutes);
+
+
+4. Develop the Front-End with React
+Set Up React Project
+
+Initialize React:
+npx create-react-app client
+cd client
+npm install axios react-router-dom
+Create Components
+
+Components for managing albums and photos:
+AlbumList.js for displaying all albums.
+AddAlbum.js for creating a new album.
+UploadPhotos.js for uploading photos to an album.
+AlbumDetail.js to view an album and its photos.
+Set Up React Router
+
+
+Configure routing in App.js:
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import Home from './components/Home';
+import AlbumList from './components/AlbumList';
+import AddAlbum from './components/AddAlbum';
+import UploadPhotos from './components/UploadPhotos';
+import AlbumDetail from './components/AlbumDetail';
+
+function App() {
+  return (
+    <Router>
+      <Switch>
+        <Route path="/" exact component={Home} />
+        <Route path="/albums" component={AlbumList} />
+        <Route path="/add-album" component={AddAlbum} />
+        <Route path="/upload-photos/:id" component={UploadPhotos} />
+        <Route path="/album/:id" component={AlbumDetail} />
+      </Switch>
+    </Router>
+  );
+}
+
+export default App;
