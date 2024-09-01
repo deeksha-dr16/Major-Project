@@ -1,0 +1,188 @@
+Project Setup
+Initialize the Project
+
+Create a new directory and navigate into it.
+Initialize a new Node.js project:
+npm init -y
+
+
+Install necessary dependencies:
+npm install express mongoose cors dotenv multer gridfs-stream
+npm install --save-dev nodemon
+Set Up the Server
+
+Create an index.js file for the Express server:
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const multer = require('multer');
+const Grid = require('gridfs-stream');
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const PORT = process.env.PORT || 5000;
+
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => app.listen(PORT, () => console.log(`Server running on port ${PORT}`)))
+  .catch((error) => console.error(error.message));
+
+let gfs;
+
+mongoose.connection.once('open', () => {
+  gfs = Grid(mongoose.connection.db, mongoose.mongo);
+  gfs.collection('uploads');
+});
+
+
+2. Design the Database Schema
+Create Models
+User Model (User.js):
+const mongoose = require('mongoose');
+
+const userSchema = mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+module.exports = mongoose.model('User', userSchema);
+
+
+Music Model (Music.js):
+const mongoose = require('mongoose');
+
+const musicSchema = mongoose.Schema({
+  title: { type: String, required: true },
+  artist: { type: String, required: true },
+  album: { type: String },
+  genre: { type: String },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  fileId: { type: mongoose.Schema.Types.ObjectId, required: true }, // Reference to the GridFS file
+  createdAt: { type: Date, default: Date.now },
+});
+
+module.exports = mongoose.model('Music', musicSchema);
+
+
+
+3. Implement CRUD Operations
+Set Up File Uploads
+
+Configure multer for file uploads to GridFS:
+const storage = new GridFsStorage({
+  url: process.env.MONGODB_URI,
+  options: { useNewUrlParser: true, useUnifiedTopology: true },
+  file: (req, file) => {
+    return {
+      bucketName: 'uploads', // Bucket name in MongoDB
+      filename: `${Date.now()}_${file.originalname}`,
+    };
+  },
+});
+
+const upload = multer({ storage });
+
+
+Create Routes
+Music Routes (music.js):
+const express = require('express');
+const router = express.Router();
+const Music = require('../models/Music');
+const upload = require('../middlewares/upload'); // Assume multer configuration is exported from this module
+
+// Upload a new song
+router.post('/', upload.single('file'), async (req, res) => {
+  try {
+    const newMusic = new Music({
+      ...req.body,
+      fileId: req.file.id,
+    });
+    await newMusic.save();
+    res.status(201).json(newMusic);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Stream music file
+router.get('/stream/:id', async (req, res) => {
+  try {
+    const music = await Music.findById(req.params.id);
+    if (!music) return res.status(404).json({ message: 'Music not found' });
+
+    const readStream = gfs.createReadStream({ _id: music.fileId });
+    readStream.pipe(res);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete a music file
+router.delete('/:id', async (req, res) => {
+  try {
+    const music = await Music.findById(req.params.id);
+    if (!music) return res.status(404).json({ message: 'Music not found' });
+
+    await gfs.remove({ _id: music.fileId, root: 'uploads' }, (err) => {
+      if (err) return res.status(500).json({ message: err.message });
+    });
+
+    await Music.findByIdAndDelete(req.params.id);
+    res.status(200).json({ message: 'Music deleted successfully.' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+module.exports = router;
+Integrate Routes into Server
+
+Add routes to index.js:
+javascript
+Copy code
+const musicRoutes = require('./routes/music');
+
+app.use('/music', musicRoutes);
+
+
+4. Develop the Front-End with React
+Set Up React Project
+
+Initialize React:
+npx create-react-app client
+cd client
+npm install axios react-router-dom
+Create Components
+
+Components for managing music files:
+MusicList.js for displaying all uploaded music.
+UploadMusic.js for uploading new music files.
+MusicPlayer.js for streaming music files.
+Set Up React Router
+
+
+Configure routing in App.js:
+import React from 'react';
+import { BrowserRouter as Router, Route, Switch } from 'react-router-dom';
+import Home from './components/Home';
+import MusicList from './components/MusicList';
+import UploadMusic from './components/UploadMusic';
+import MusicPlayer from './components/MusicPlayer';
+
+function App() {
+  return (
+    <Router>
+      <Switch>
+        <Route path="/" exact component={Home} />
+        <Route path="/music" component={MusicList} />
+        <Route path="/upload-music" component={UploadMusic} />
+        <Route path="/music/:id" component={MusicPlayer} />
+      </Switch>
+    </Router>
+  );
+}
+
+export default App;
